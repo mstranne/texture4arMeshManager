@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using ar2gh.camera;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
@@ -17,6 +16,7 @@ public class meshColoring : MonoBehaviour
     public Material invisible = null;
     public GameObject ProjectorPrefab = null;
 
+    //Save poses and cam textures for texturing later on
     private List<Vector3> cam_poses_trans = new List<Vector3>();
     private List<Quaternion> cam_poses_rot = new List<Quaternion>();
     private List<Texture2D> cam_textures = new List<Texture2D>();
@@ -25,9 +25,13 @@ public class meshColoring : MonoBehaviour
     public GameObject rjctr = null;
     public Texture2D txtr = null;
 
+    //using Projectors for easy texturing
     public bool use_Projectors = true;
+
+    //texture directly with mesh manager updates (todo not working atm)
     public bool use_updates = false;
 
+    //list of meshes when not textured with runnning MeshManager instance
     private List<GameObject> curr_meshes = new List<GameObject>();
 
     // Start is called before the first frame update
@@ -53,7 +57,7 @@ public class meshColoring : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if (!use_updates && Time.time - lastTime > 5 && !showing)
+        if (!use_updates && Time.time - lastTime > 5 && !showing)   //check all 5 sec
         {
             foreach(var t in cam_poses_trans)
             {
@@ -108,7 +112,9 @@ public class meshColoring : MonoBehaviour
             for (var i = 0; i < m.vertices.Length; i++)
             {
                 var vertex = m.vertices[i];
-                colors[i] = GetColorAtWorldPosition(vertex, camTexture, camera);
+                Color? n_cal = GetColorAtWorldPosition(vertex, camTexture, camera);
+                if(n_cal != null)
+                    colors[i] = n_cal.Value;
             }
 
             Debug.Log("cer cnt updtd: " + m.vertices.Length);
@@ -118,15 +124,13 @@ public class meshColoring : MonoBehaviour
         //Debug.Log("finisged");
     }
 
-    private static Color GetColorAtWorldPosition(Vector3 worldPosition, Texture2D texture, Camera camera)
+    private static Color? GetColorAtWorldPosition(Vector3 worldPosition, Texture2D texture, Camera camera)
     {
         var screenPosition = camera.WorldToScreenPoint(worldPosition);
         if (screenPosition.x < 0 || screenPosition.x > Screen.width)
-            return Color.black;
+            return null;
         if (screenPosition.y < 0 || screenPosition.y > Screen.height)
-            return Color.black;
-
-        Debug.Log("set col");
+            return null;
 
         var wTextureToScreen = texture.width / (1f * Screen.width);
         var hTextureToScreen = texture.height / (1f * Screen.height);
@@ -163,7 +167,9 @@ public class meshColoring : MonoBehaviour
             {
                 IList<MeshFilter> meshes = mesh_manager.meshes;
 
-                foreach(var m in meshes)
+                Camera cam = new Camera();
+                cam.CopyFrom(Camera.main);
+                foreach (var m in meshes)
                 {
                     GameObject newMesh = new GameObject(m.name);
                     MeshFilter mFilter = newMesh.AddComponent<MeshFilter>();
@@ -171,8 +177,35 @@ public class meshColoring : MonoBehaviour
                     mFilter.mesh = m.mesh;
                     mRender.material = visible;
 
+                    Mesh mesh_ = mFilter.mesh;
+                    var colors = new Color?[mesh_.vertices.Length];
+                    for (int idx = 0; idx < cam_poses_trans.Count; idx++)
+                    {
+                        cam.transform.position = cam_poses_trans[idx];
+                        cam.transform.rotation = cam_poses_rot[idx];
+
+                        for (var i = 0; i < mesh_.vertices.Length; i++)
+                        {
+                            var vertex = mesh_.vertices[i];
+                            Color? new_cal = GetColorAtWorldPosition(vertex, cam_textures[idx], cam);
+                            if (new_cal != null)
+                            {
+                                if (colors[i] == null)
+                                    colors[i] = new_cal.Value;
+                                else
+                                    Debug.Log("todo already set");
+                            } 
+                        }
+                    }
+                    Debug.Log("cer cnt: " + mesh_.vertices.Length);
+
+                    mesh_.colors = new Color[colors.Length];
+                    for (int idx = 0; idx < colors.Length; idx++)
+                        mesh_.colors[idx] = colors[idx].Value;
+                    
                     curr_meshes.Add(newMesh);
                 }
+                Destroy(cam);
 
                 mesh_manager.DestroyAllMeshes();
                 cam_poses_rot.Clear();
