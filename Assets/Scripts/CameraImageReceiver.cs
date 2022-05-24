@@ -8,7 +8,7 @@ using UnityEngine.XR.ARSubsystems;
 //thanks to https://github.com/dominikganghofer/ar2gh/tree/master/UnityProject/ARDataStreamer
 public class CameraImageReceiver : MonoBehaviour
 {
-    ARCameraManager _cameraManager = null;
+    public ARCameraManager _cameraManager = null;
     private Texture2D _receivedTexture;
     private Texture2D _rbgaTexture;
 

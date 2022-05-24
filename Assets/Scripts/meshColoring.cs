@@ -37,7 +37,19 @@ public class meshColoring : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        if(mesh_manager == null)
+
+        Debug.Log("test");
+
+        Color? clr = Color.blue;
+        Color[] clrs = new Color[2];
+
+        clrs[0] = Color.blue;
+        clrs[1] = clr.Value;
+
+        Debug.Log("val0: " + clrs[0]);
+        Debug.Log("val1: " + clrs[1]);
+
+        if (mesh_manager == null)
             Debug.LogError("mesh manager null");
 
         if(!use_Projectors && use_updates)
@@ -99,9 +111,10 @@ public class meshColoring : MonoBehaviour
             for (var i = 0; i < m.vertices.Length; i++)
             {
                 var vertex = m.vertices[i];
-                colors[i] = GetColorAtWorldPosition(vertex, camTexture, camera);
+                Color? n_cal = GetColorAtWorldPosition(vertex, camTexture, camera);
+                if (n_cal != null)
+                    colors[i] = n_cal.Value;
             }
-            Debug.Log("cer cnt: " + m.vertices.Length);
             Added[iMesh].mesh.colors = colors;
         }
 
@@ -166,18 +179,22 @@ public class meshColoring : MonoBehaviour
             else
             {
                 IList<MeshFilter> meshes = mesh_manager.meshes;
+                Debug.Log("get meshes");
 
-                Camera cam = new Camera();
-                cam.CopyFrom(Camera.main);
+                GameObject camObj = new GameObject("camObj");
+                Camera cam = camObj.AddComponent<Camera>();
+                cam.CopyFrom(_camera);
+                Debug.Log("copied cam");
                 foreach (var m in meshes)
                 {
                     GameObject newMesh = new GameObject(m.name);
                     MeshFilter mFilter = newMesh.AddComponent<MeshFilter>();
                     MeshRenderer mRender = newMesh.AddComponent<MeshRenderer>();
+
                     mFilter.mesh = m.mesh;
                     mRender.material = visible;
-
                     Mesh mesh_ = mFilter.mesh;
+                    
                     var colors = new Color?[mesh_.vertices.Length];
                     for (int idx = 0; idx < cam_poses_trans.Count; idx++)
                     {
@@ -188,25 +205,34 @@ public class meshColoring : MonoBehaviour
                         {
                             var vertex = mesh_.vertices[i];
                             Color? new_cal = GetColorAtWorldPosition(vertex, cam_textures[idx], cam);
-                            if (new_cal != null)
+                            if (new_cal != null && new_cal.HasValue)
                             {
                                 if (colors[i] == null)
-                                    colors[i] = new_cal.Value;
+                                {
+                                    colors[i] = new_cal.Value;                                                     
+                                }
                                 else
                                     Debug.Log("todo already set");
                             } 
                         }
                     }
-                    Debug.Log("cer cnt: " + mesh_.vertices.Length);
 
-                    mesh_.colors = new Color[colors.Length];
+                    Color[] mesh_colors = new Color[colors.Length];
                     for (int idx = 0; idx < colors.Length; idx++)
-                        mesh_.colors[idx] = colors[idx].Value;
-                    
+                    {
+                        if (colors[idx].HasValue)
+                        {
+                            mesh_colors[idx] = colors[idx].Value;
+                        }
+                        else
+                            mesh_colors[idx] = Color.white;
+                    }
+
+                    mesh_.colors = mesh_colors;
                     curr_meshes.Add(newMesh);
                 }
                 Destroy(cam);
-
+                Destroy(camObj);
                 mesh_manager.DestroyAllMeshes();
                 cam_poses_rot.Clear();
                 cam_poses_trans.Clear();
@@ -231,7 +257,15 @@ public class meshColoring : MonoBehaviour
 
                 foreach(var obj in curr_meshes)
                 {
+
+                    MeshFilter mFilter = obj.GetComponent<MeshFilter>();
+                    for (var i = 0; i < mFilter.mesh.vertices.Length; i++)
+                    {
+                        if(mFilter.mesh.colors[i].a != 0)
+                            Debug.Log(mFilter.mesh.colors[i]);
+                    }
                     Destroy(obj);
+
                 }
 
                 mesh_manager.enabled = true;
