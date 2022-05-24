@@ -9,6 +9,8 @@ EditorBuildSettings:
     path: Assets/Scenes/MeshColorizer.unity
     guid: 9fc0d4010bbf28b4594072e72b8655ab
   m_configObjects:
+    UnityEditor.XR.ARCore.ARCoreSettings: {fileID: 11400000, guid: 74114c28de2603f44af70528afccfa2a,
+      type: 2}
     UnityEditor.XR.ARKit.ARKitSettings: {fileID: 11400000, guid: 5ca2f41ea54cf45549792897a1ab1dc3,
       type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: d1174ea187b764cfc9f5dde73aecf447,
