@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
@@ -14,6 +15,7 @@ public class meshColoring : MonoBehaviour
     public Text btn_text = null;
     public Material visible = null;
     public Material invisible = null;
+    public Material texture_mat = null;
     public GameObject ProjectorPrefab = null;
 
     //Save poses and cam textures for texturing later on
@@ -30,6 +32,8 @@ public class meshColoring : MonoBehaviour
 
     //texture directly with mesh manager updates (todo not working atm)
     public bool use_updates = false;
+    public bool subdivide_mesh = false;
+    public bool create_texture_atlas = false;
 
     //list of meshes when not textured with runnning MeshManager instance
     private List<GameObject> curr_meshes = new List<GameObject>();
@@ -152,6 +156,20 @@ public class meshColoring : MonoBehaviour
             (int)(hTextureToScreen * screenPosition.y));
     }
 
+    private static Vector2? GetScreenPositionFromWorld(Vector3 worldPosition, Texture2D texture, Camera camera)
+    {
+        var screenPosition = camera.WorldToScreenPoint(worldPosition);
+        if (screenPosition.x < 0 || screenPosition.x > Screen.width)
+            return null;
+        if (screenPosition.y < 0 || screenPosition.y > Screen.height)
+            return null;
+
+        var wTextureToScreen = texture.width / (1f * Screen.width);
+        var hTextureToScreen = texture.height / (1f * Screen.height);
+
+        return new Vector2((wTextureToScreen * screenPosition.x)/texture.width, (hTextureToScreen * screenPosition.y)/texture.height);
+    }
+
     bool showing = false;
     public void showMesh()
     {
@@ -179,23 +197,52 @@ public class meshColoring : MonoBehaviour
             else
             {
                 IList<MeshFilter> meshes = mesh_manager.meshes;
-                Debug.Log("get meshes");
-
                 GameObject camObj = new GameObject("camObj");
                 Camera cam = camObj.AddComponent<Camera>();
                 cam.CopyFrom(_camera);
-                Debug.Log("copied cam");
+
+                for (int idx = 0; idx < cam_poses_rot.Count; idx++)
+                {
+                    byte[] bytes = cam_textures[idx].EncodeToPNG();
+                    var dirPath = Application.persistentDataPath + "/imgs/";
+                    if (!Directory.Exists(dirPath))
+                    {
+                        Directory.CreateDirectory(dirPath);
+                    }
+                    File.WriteAllBytes(dirPath + "Image" + idx + ".png", bytes);
+                }
+
+                Rect[] atlas_rec = null;
+                if (create_texture_atlas)
+                {
+                    Texture2D atlas = new Texture2D(8192, 8192);
+                    atlas_rec = atlas.PackTextures(cam_textures.ToArray(), 0);
+                    foreach (var r in atlas_rec)
+                        Debug.Log("rec: " + r);
+
+                    texture_mat.mainTexture = atlas;
+                }
+
                 foreach (var m in meshes)
                 {
                     GameObject newMesh = new GameObject(m.name);
                     MeshFilter mFilter = newMesh.AddComponent<MeshFilter>();
                     MeshRenderer mRender = newMesh.AddComponent<MeshRenderer>();
 
+                    //Debug.Log("vertex cnt: " + m.mesh.vertexCount);
                     mFilter.mesh = m.mesh;
-                    mRender.material = visible;
+                    if(subdivide_mesh)
+                        MeshSmoothing.Subdivide(mFilter.mesh);
+                    //Debug.Log("vertex cnt2: " + mFilter.mesh.vertexCount);
+                    if (create_texture_atlas)
+                        mRender.material = texture_mat;
+                    else
+                        mRender.material = visible;
+
                     Mesh mesh_ = mFilter.mesh;
-                    
+
                     var colors = new Color?[mesh_.vertices.Length];
+                    var uvs = new Vector2?[mesh_.vertices.Length];
                     for (int idx = 0; idx < cam_poses_trans.Count; idx++)
                     {
                         cam.transform.position = cam_poses_trans[idx];
@@ -204,31 +251,67 @@ public class meshColoring : MonoBehaviour
                         for (var i = 0; i < mesh_.vertices.Length; i++)
                         {
                             var vertex = mesh_.vertices[i];
-                            Color? new_cal = GetColorAtWorldPosition(vertex, cam_textures[idx], cam);
-                            if (new_cal != null && new_cal.HasValue)
+
+                            if (create_texture_atlas)
                             {
-                                if (colors[i] == null)
+                                Vector2? new_uv = GetScreenPositionFromWorld(vertex, cam_textures[idx], cam);
+                                if (new_uv != null && new_uv.HasValue)
                                 {
-                                    colors[i] = new_cal.Value;                                                     
+                                    if (uvs[i] == null)
+                                    {
+                                        uvs[i] = new Vector2(atlas_rec[idx].x, atlas_rec[idx].y) + new_uv.Value * new Vector2(atlas_rec[idx].width, atlas_rec[idx].height);
+                                    }
+                                    else
+                                        Debug.Log("todo already set");
                                 }
-                                else
-                                    Debug.Log("todo already set");
-                            } 
+                            }
+                            else
+                            {
+                                Color? new_cal = GetColorAtWorldPosition(vertex, cam_textures[idx], cam);
+                                if (new_cal != null && new_cal.HasValue)
+                                {
+                                    if (colors[i] == null)
+                                    {
+                                        colors[i] = new_cal.Value;
+                                    }
+                                    else
+                                        Debug.Log("todo already set");
+                                }
+                            }
                         }
                     }
 
-                    Color[] mesh_colors = new Color[colors.Length];
-                    for (int idx = 0; idx < colors.Length; idx++)
+                    if (create_texture_atlas)
                     {
-                        if (colors[idx].HasValue)
+                        int cntn = 0;
+                        Vector2[] mesh_uvs = new Vector2[uvs.Length];
+                        for (int idx = 0; idx < colors.Length; idx++)
                         {
-                            mesh_colors[idx] = colors[idx].Value;
+                            if (uvs[idx].HasValue)
+                            {
+                                mesh_uvs[idx] = uvs[idx].Value;
+                                cntn++;
+                            }
+                            else
+                                mesh_uvs[idx] = new Vector2(0,0); //todo
                         }
-                        else
-                            mesh_colors[idx] = Color.white;
+                        Debug.Log("cnt uvs: " + cntn);
+                        mesh_.uv = mesh_uvs;
                     }
-
-                    mesh_.colors = mesh_colors;
+                    else
+                    {
+                        Color[] mesh_colors = new Color[colors.Length];
+                        for (int idx = 0; idx < colors.Length; idx++)
+                        {
+                            if (colors[idx].HasValue)
+                            {
+                                mesh_colors[idx] = colors[idx].Value;
+                            }
+                            else
+                                mesh_colors[idx] = Color.white;
+                        }
+                        mesh_.colors = mesh_colors;
+                    }                    
                     curr_meshes.Add(newMesh);
                 }
                 Destroy(cam);
@@ -259,11 +342,6 @@ public class meshColoring : MonoBehaviour
                 {
 
                     MeshFilter mFilter = obj.GetComponent<MeshFilter>();
-                    for (var i = 0; i < mFilter.mesh.vertices.Length; i++)
-                    {
-                        if(mFilter.mesh.colors[i].a != 0)
-                            Debug.Log(mFilter.mesh.colors[i]);
-                    }
                     Destroy(obj);
 
                 }
@@ -275,8 +353,11 @@ public class meshColoring : MonoBehaviour
 
     public void AddProjector(Vector3 pose_t, Quaternion pose_q, Texture2D camTexture)
     {
+        Texture2D copyTexture = new Texture2D(camTexture.width, camTexture.height);
+        copyTexture.SetPixels(camTexture.GetPixels());
+        copyTexture.Apply();
         cam_poses_trans.Add(pose_t);
         cam_poses_rot.Add(pose_q);
-        cam_textures.Add(camTexture);
+        cam_textures.Add(copyTexture);
     }
 }

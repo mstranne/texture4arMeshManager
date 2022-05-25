@@ -455,7 +455,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 32876f77eab1f4dd28cae4986bafa71a, type: 2}
+  - {fileID: 2100000, guid: 42345715f66634b8a9279f67f67061ba, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -953,12 +953,15 @@ MonoBehaviour:
   btn_text: {fileID: 1474626059}
   visible: {fileID: 2100000, guid: b0ca8007855eb406182975012bfd0026, type: 2}
   invisible: {fileID: 2100000, guid: 32876f77eab1f4dd28cae4986bafa71a, type: 2}
+  texture_mat: {fileID: 2100000, guid: 42345715f66634b8a9279f67f67061ba, type: 2}
   ProjectorPrefab: {fileID: 7216155949111761744, guid: a4ddd41ff4a264713be07c1cede56e19,
     type: 3}
   rjctr: {fileID: 297767499}
   txtr: {fileID: 2800000, guid: 16e8c542bae6a4aea92e18249c258f0b, type: 3}
   use_Projectors: 0
   use_updates: 0
+  subdivide_mesh: 0
+  create_texture_atlas: 1
 --- !u!1 &1342703409
 GameObject:
   m_ObjectHideFlags: 0
