@@ -58,6 +58,12 @@ public class meshColoring : MonoBehaviour
 
         if(!use_Projectors && use_updates)
             mesh_manager.meshesChanged += ARMeshChanged;
+
+        Byte[] bytes = File.ReadAllBytes("/Users/mini/Work/texture4arMeshManager/Assets/StreaminAssets/0.bin");
+        Mesh m = MeshSerializer.ReadMesh(bytes);
+        GameObject obj = new GameObject("camObj");
+        MeshFilter mFilter = obj.AddComponent<MeshFilter>();
+        mFilter.mesh = m;
     }
 
     private void ARMeshChanged(ARMeshesChangedEventArgs obj)
@@ -77,7 +83,7 @@ public class meshColoring : MonoBehaviour
         {
             foreach(var t in cam_poses_trans)
             {
-                if (Vector3.Distance(_camera.transform.position, t) < 0.5f)
+                if (Vector3.Distance(_camera.transform.position, t) < 0.1f)
                     return;
             }
 
@@ -201,6 +207,8 @@ public class meshColoring : MonoBehaviour
                 Camera cam = camObj.AddComponent<Camera>();
                 cam.CopyFrom(_camera);
 
+                string posefile = Path.Combine(Application.persistentDataPath, "out.txt");
+                string content = "";
                 for (int idx = 0; idx < cam_poses_rot.Count; idx++)
                 {
                     byte[] bytes = cam_textures[idx].EncodeToPNG();
@@ -210,7 +218,10 @@ public class meshColoring : MonoBehaviour
                         Directory.CreateDirectory(dirPath);
                     }
                     File.WriteAllBytes(dirPath + "Image" + idx + ".png", bytes);
+                    content += String.Format("{0:F5};{1:F5};{2:F5} \n{3:F5};{4:F5};{5:F5}{6:F5} \n", cam_poses_trans[idx].x, cam_poses_trans[idx].y,
+                            cam_poses_trans[idx].z, cam_poses_rot[idx].x, cam_poses_rot[idx].y, cam_poses_rot[idx].z, cam_poses_rot[idx].w);
                 }
+                File.WriteAllText(posefile, content);
 
                 Rect[] atlas_rec = null;
                 if (create_texture_atlas)
@@ -223,11 +234,17 @@ public class meshColoring : MonoBehaviour
                     texture_mat.mainTexture = atlas;
                 }
 
+                int midx = 0;
                 foreach (var m in meshes)
                 {
                     GameObject newMesh = new GameObject(m.name);
                     MeshFilter mFilter = newMesh.AddComponent<MeshFilter>();
                     MeshRenderer mRender = newMesh.AddComponent<MeshRenderer>();
+
+                    Byte[] to_write = MeshSerializer.WriteMesh(m.mesh, true);
+                    string path = Path.Combine(Application.persistentDataPath, midx++ + ".bin");
+                    File.WriteAllBytes(path, to_write);
+
 
                     //Debug.Log("vertex cnt: " + m.mesh.vertexCount);
                     mFilter.mesh = m.mesh;
