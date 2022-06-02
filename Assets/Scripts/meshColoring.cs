@@ -18,7 +18,6 @@ public class meshColoring : MonoBehaviour
     public Material invisible = null;
     public Material texture_mat = null;
 
-
     //Save poses and cam textures for texturing later on
     private List<Vector3> cam_poses_trans = new List<Vector3>();
     private List<Quaternion> cam_poses_rot = new List<Quaternion>();
@@ -26,16 +25,13 @@ public class meshColoring : MonoBehaviour
     private List<Texture2D> depth_textures = new List<Texture2D>();
     private List<GameObject> projectors = new List<GameObject>();
 
-    public GameObject rjctr = null;
-    public Texture2D txtr = null;
-
-    //using Projectors for easy texturing
-    public bool use_Projectors = true;
 
     //texture directly with mesh manager updates (todo not working atm)
     public bool use_updates = false;
     public bool subdivide_mesh = false;
     public bool create_texture_atlas = false;
+    public bool image_auto = false;
+    public GameObject TakeImg = null;
 
     //list of meshes when not textured with runnning MeshManager instance
     private List<GameObject> curr_meshes = new List<GameObject>();
@@ -46,8 +42,11 @@ public class meshColoring : MonoBehaviour
         if (mesh_manager == null)
             Debug.LogError("mesh manager null");
 
-        if(!use_Projectors && use_updates)
+        if(use_updates)
             mesh_manager.meshesChanged += ARMeshChanged;
+
+        if (image_auto)
+            TakeImg.SetActive(false);
 
         //GameObject obj = new GameObject("camObj");
         //MeshFilter mFilter = obj.AddComponent<MeshFilter>();
@@ -291,19 +290,27 @@ public class meshColoring : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if (!use_updates && Time.time - lastTime > 5 && !showing)   //check all 5 sec
+        if (image_auto && !use_updates && Time.time - lastTime > 5 && !showing)   //check all 5 sec
         {
             foreach(var t in cam_poses_trans)
             {
-                if (Vector3.Distance(_camera.transform.position, t) < 0.1f)
+                if (Vector3.Distance(_camera.transform.position, t) < 0.25f)
                     return;
             }
 
             Vector3 pos = _camera.transform.position;
             Quaternion q = _camera.transform.rotation;
-            _cameraImageReceiver.TryGetLatestCameraImage(texture2D =>
-                       AddProjector(pos, q, texture2D));
+            _cameraImageReceiver.TryGetLatestCameraAndDepthImage((texture2D, depthTexture2D) =>
+                       AddImages(pos, q, texture2D, depthTexture2D));
         } 
+    }
+
+    public void takeImage()
+    {
+        Vector3 pos = _camera.transform.position;
+        Quaternion q = _camera.transform.rotation;
+        _cameraImageReceiver.TryGetLatestCameraAndDepthImage((texture2D, depthTexture2D) =>
+                   AddImages(pos, q, texture2D, depthTexture2D));
     }
 
     public IEnumerator UpdateMeshVertexCols()
@@ -415,6 +422,7 @@ public class meshColoring : MonoBehaviour
         if (showing)
         {
             btn_text.text = "stop showing";
+            _cameraImageReceiver.enableOcclution(!showing);
             
             IList<MeshFilter> meshes = mesh_manager.meshes;
             GameObject camObj = new GameObject("camObj");
@@ -432,6 +440,10 @@ public class meshColoring : MonoBehaviour
                     Directory.CreateDirectory(dirPath);
                 }
                 File.WriteAllBytes(dirPath + "Image" + idx + ".png", bytes);
+
+                bytes = depth_textures[idx].EncodeToPNG();                
+                File.WriteAllBytes(dirPath + "Depth" + idx + ".png", bytes);
+
                 content += String.Format("{0:F5};{1:F5};{2:F5} \n{3:F5};{4:F5};{5:F5}{6:F5} \n", cam_poses_trans[idx].x, cam_poses_trans[idx].y,
                         cam_poses_trans[idx].z, cam_poses_rot[idx].x, cam_poses_rot[idx].y, cam_poses_rot[idx].z, cam_poses_rot[idx].w);
             }
@@ -442,8 +454,6 @@ public class meshColoring : MonoBehaviour
             {
                 Texture2D atlas = new Texture2D(8192, 8192);
                 atlas_rec = atlas.PackTextures(cam_textures.ToArray(), 0);
-                foreach (var r in atlas_rec)
-                    Debug.Log("rec: " + r);
 
                 texture_mat.mainTexture = atlas;
             }
@@ -507,7 +517,7 @@ public class meshColoring : MonoBehaviour
                 cam.transform.rotation = cam_poses_rot[idx];
 
                 //yield return new WaitForEndOfFrame();
-                Debug.Log("tris left: " + triangle_list.Count);
+                //Debug.Log("tris left: " + triangle_list.Count);
                 List<int> remove_list = new List<int>();
                 for (int tir_index = 0; tir_index < triangle_list.Count; tir_index++)
                 {
@@ -576,7 +586,6 @@ public class meshColoring : MonoBehaviour
                     mesh_uvs[idx_] = new Vector2(0, 0); //todo
             }
 
-            Debug.Log("cnt uvs: " + cntn);
             mesh_.uv = mesh_uvs;
             curr_meshes.Add(newMesh);
             Destroy(cam);
@@ -590,9 +599,9 @@ public class meshColoring : MonoBehaviour
         }
         else
         {
-            btn_text.text = "show mesh";            
-
-            foreach(var obj in curr_meshes)
+            btn_text.text = "show mesh";
+            _cameraImageReceiver.enableOcclution(!showing);
+            foreach (var obj in curr_meshes)
             {
 
                 MeshFilter mFilter = obj.GetComponent<MeshFilter>();
@@ -605,13 +614,20 @@ public class meshColoring : MonoBehaviour
         }
     }
 
-    public void AddProjector(Vector3 pose_t, Quaternion pose_q, Texture2D camTexture)
+    public void AddImages(Vector3 pose_t, Quaternion pose_q, Texture2D camTexture, Texture2D depthTexture)
     {
         Texture2D copyTexture = new Texture2D(camTexture.width, camTexture.height);
         copyTexture.SetPixels(camTexture.GetPixels());
         copyTexture.Apply();
+        cam_textures.Add(copyTexture);
+
+        copyTexture = new Texture2D(depthTexture.width, depthTexture.height, depthTexture.format, false);
+        copyTexture.SetPixels(depthTexture.GetPixels());
+        copyTexture.Apply();
+        depth_textures.Add(copyTexture);
+
         cam_poses_trans.Add(pose_t);
         cam_poses_rot.Add(pose_q);
-        cam_textures.Add(copyTexture);
+        
     }
 }
