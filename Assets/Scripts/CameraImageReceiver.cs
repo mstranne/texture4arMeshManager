@@ -209,7 +209,11 @@ public class CameraImageReceiver : MonoBehaviour
 
     public void enableOcclution(bool enable)
     {
-        _occlusionManager.enabled = enabled;
+        
+        if(enable)
+            _occlusionManager.requestedEnvironmentDepthMode = UnityEngine.XR.ARSubsystems.EnvironmentDepthMode.Medium;
+        else
+            _occlusionManager.requestedEnvironmentDepthMode = UnityEngine.XR.ARSubsystems.EnvironmentDepthMode.Disabled;
     }
 
 }

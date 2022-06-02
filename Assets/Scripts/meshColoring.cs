@@ -385,26 +385,26 @@ public class meshColoring : MonoBehaviour
     {
         var screenPosition = camera.WorldToScreenPoint(worldPosition);
 
+        if (screenPosition.x < 0 || screenPosition.x > Screen.width)
+            return null;
+        if (screenPosition.y < 0 || screenPosition.y > Screen.height)
+            return null;
+
         Ray ray = camera.ScreenPointToRay(screenPosition);
         RaycastHit hitData;
         if (Physics.Raycast(ray, out hitData))
         {
             if (Vector3.Distance(hitData.point, worldPosition) > 0.01f)
             {
-                //Debug.Log("not visible");
+                Debug.Log("not visible");
                 return null;
             }
         }
         else
         {
             //Debug.Log("ray hit nothin");
-            return null;
+            //return null;
         }
-
-        if (screenPosition.x < 0 || screenPosition.x > Screen.width)
-            return null;
-        if (screenPosition.y < 0 || screenPosition.y > Screen.height)
-            return null;
 
         var wTextureToScreen = texture.width / (1f * Screen.width);
         var hTextureToScreen = texture.height / (1f * Screen.height);
@@ -444,7 +444,7 @@ public class meshColoring : MonoBehaviour
                 bytes = depth_textures[idx].EncodeToPNG();                
                 File.WriteAllBytes(dirPath + "Depth" + idx + ".png", bytes);
 
-                content += String.Format("{0:F5};{1:F5};{2:F5} \n{3:F5};{4:F5};{5:F5}{6:F5} \n", cam_poses_trans[idx].x, cam_poses_trans[idx].y,
+                content += String.Format("{0:F5};{1:F5};{2:F5} \n{3:F5};{4:F5};{5:F5};{6:F5} \n", cam_poses_trans[idx].x, cam_poses_trans[idx].y,
                         cam_poses_trans[idx].z, cam_poses_rot[idx].x, cam_poses_rot[idx].y, cam_poses_rot[idx].z, cam_poses_rot[idx].w);
             }
             File.WriteAllText(posefile, content);
@@ -546,7 +546,7 @@ public class meshColoring : MonoBehaviour
                         int cnt_used = 0;
                         for (int j = 0; j < 3; j++)
                         {
-                            if (uvs[triangle[j]] == null)
+                            if (!uvs[triangle[j]].HasValue)
                             {
                                 uvs[triangle[j]] = new Vector2(atlas_rec[idx].x, atlas_rec[idx].y) + new_uvs[j].Value * new Vector2(atlas_rec[idx].width, atlas_rec[idx].height);
                             }
