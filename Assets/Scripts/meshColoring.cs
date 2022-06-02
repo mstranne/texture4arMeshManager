@@ -17,12 +17,13 @@ public class meshColoring : MonoBehaviour
     public Material visible = null;
     public Material invisible = null;
     public Material texture_mat = null;
-    public GameObject ProjectorPrefab = null;
+
 
     //Save poses and cam textures for texturing later on
     private List<Vector3> cam_poses_trans = new List<Vector3>();
     private List<Quaternion> cam_poses_rot = new List<Quaternion>();
     private List<Texture2D> cam_textures = new List<Texture2D>();
+    private List<Texture2D> depth_textures = new List<Texture2D>();
     private List<GameObject> projectors = new List<GameObject>();
 
     public GameObject rjctr = null;
@@ -53,7 +54,7 @@ public class meshColoring : MonoBehaviour
         //mFilter.mesh = m;
 
 
-        if (true)
+        if (false)
         {
             StartCoroutine(testScript());   
         }
@@ -409,190 +410,198 @@ public class meshColoring : MonoBehaviour
     {
 
         // rjctr.GetComponent<Projector>().material.SetTexture("_ShadowTex", txtr); 
-
+        int idx = 0;
         showing = !showing;
         if (showing)
         {
             btn_text.text = "stop showing";
-            if (use_Projectors)
+            
+            IList<MeshFilter> meshes = mesh_manager.meshes;
+            GameObject camObj = new GameObject("camObj");
+            Camera cam = camObj.AddComponent<Camera>();
+            cam.CopyFrom(_camera);
+
+            string posefile = Path.Combine(Application.persistentDataPath, "out.txt");
+            string content = "";
+            for (idx = 0; idx < cam_poses_rot.Count; idx++)
             {
-                mesh_manager.meshPrefab.GetComponent<MeshRenderer>().material = visible;
-                Debug.Log("mesh material changed");
-
-                for (int idx = 0; idx < cam_poses_trans.Count; idx++)
+                byte[] bytes = cam_textures[idx].EncodeToPNG();
+                var dirPath = Application.persistentDataPath + "/imgs/";
+                if (!Directory.Exists(dirPath))
                 {
-                    var proj = Instantiate(ProjectorPrefab, cam_poses_trans[idx], cam_poses_rot[idx]);
-                    proj.GetComponent<Projector>().material.SetTexture("_ShadowTex", cam_textures[idx]);
-                    projectors.Add(proj);
+                    Directory.CreateDirectory(dirPath);
                 }
-
-                Debug.Log(cam_poses_trans.Count + " projectors set");
+                File.WriteAllBytes(dirPath + "Image" + idx + ".png", bytes);
+                content += String.Format("{0:F5};{1:F5};{2:F5} \n{3:F5};{4:F5};{5:F5}{6:F5} \n", cam_poses_trans[idx].x, cam_poses_trans[idx].y,
+                        cam_poses_trans[idx].z, cam_poses_rot[idx].x, cam_poses_rot[idx].y, cam_poses_rot[idx].z, cam_poses_rot[idx].w);
             }
+            File.WriteAllText(posefile, content);
+
+            Rect[] atlas_rec = null;
+            if (create_texture_atlas)
+            {
+                Texture2D atlas = new Texture2D(8192, 8192);
+                atlas_rec = atlas.PackTextures(cam_textures.ToArray(), 0);
+                foreach (var r in atlas_rec)
+                    Debug.Log("rec: " + r);
+
+                texture_mat.mainTexture = atlas;
+            }
+
+            int midx = 0;
+
+            List<CombineInstance> combine = new List<CombineInstance>();
+                
+            foreach (var mesh in meshes)
+            {
+
+                //yield return new WaitForEndOfFrame();
+
+                    
+                CombineInstance c = new CombineInstance();
+                c.mesh = mesh.sharedMesh;
+                c.transform = mesh.transform.localToWorldMatrix;
+                combine.Add(c);
+                    
+            }
+
+            GameObject newMesh = new GameObject("new mesh");
+            MeshFilter mFilter = newMesh.AddComponent<MeshFilter>();
+            MeshRenderer mRender = newMesh.AddComponent<MeshRenderer>();
+
+            mFilter.mesh = new Mesh();
+            mFilter.mesh.CombineMeshes(combine.ToArray());
+
+            Byte[] to_write = MeshSerializer.WriteMesh(mFilter.mesh, true);
+            string path = Path.Combine(Application.persistentDataPath, midx++ + ".bin");
+            File.WriteAllBytes(path, to_write);
+
+                
+            if(subdivide_mesh)
+                MeshSmoothing.Subdivide(mFilter.mesh);
+            //Debug.Log("vertex cnt2: " + mFilter.mesh.vertexCount);
+            if (create_texture_atlas)
+                mRender.material = texture_mat;
             else
+                mRender.material = visible;
+
+            Mesh mesh_ = mFilter.mesh;
+
+            var uvs = new Vector2?[mesh_.vertices.Length];
+            var tris = mesh_.triangles;
+
+            List<int[]> triangle_list = new List<int[]>();
+            for (idx = 0; idx < tris.Length; idx += 3)
             {
-                IList<MeshFilter> meshes = mesh_manager.meshes;
-                GameObject camObj = new GameObject("camObj");
-                Camera cam = camObj.AddComponent<Camera>();
-                cam.CopyFrom(_camera);
-
-                string posefile = Path.Combine(Application.persistentDataPath, "out.txt");
-                string content = "";
-                for (int idx = 0; idx < cam_poses_rot.Count; idx++)
-                {
-                    byte[] bytes = cam_textures[idx].EncodeToPNG();
-                    var dirPath = Application.persistentDataPath + "/imgs/";
-                    if (!Directory.Exists(dirPath))
-                    {
-                        Directory.CreateDirectory(dirPath);
-                    }
-                    File.WriteAllBytes(dirPath + "Image" + idx + ".png", bytes);
-                    content += String.Format("{0:F5};{1:F5};{2:F5} \n{3:F5};{4:F5};{5:F5}{6:F5} \n", cam_poses_trans[idx].x, cam_poses_trans[idx].y,
-                            cam_poses_trans[idx].z, cam_poses_rot[idx].x, cam_poses_rot[idx].y, cam_poses_rot[idx].z, cam_poses_rot[idx].w);
-                }
-                File.WriteAllText(posefile, content);
-
-                Rect[] atlas_rec = null;
-                if (create_texture_atlas)
-                {
-                    Texture2D atlas = new Texture2D(8192, 8192);
-                    atlas_rec = atlas.PackTextures(cam_textures.ToArray(), 0);
-                    foreach (var r in atlas_rec)
-                        Debug.Log("rec: " + r);
-
-                    texture_mat.mainTexture = atlas;
-                }
-
-                int midx = 0;
-                foreach (var m in meshes)
-                {
-                    GameObject newMesh = new GameObject(m.name);
-                    MeshFilter mFilter = newMesh.AddComponent<MeshFilter>();
-                    MeshRenderer mRender = newMesh.AddComponent<MeshRenderer>();
-
-                    Byte[] to_write = MeshSerializer.WriteMesh(m.mesh, true);
-                    string path = Path.Combine(Application.persistentDataPath, midx++ + ".bin");
-                    File.WriteAllBytes(path, to_write);
-
-
-                    //Debug.Log("vertex cnt: " + m.mesh.vertexCount);
-                    mFilter.mesh = m.mesh;
-                    if(subdivide_mesh)
-                        MeshSmoothing.Subdivide(mFilter.mesh);
-                    //Debug.Log("vertex cnt2: " + mFilter.mesh.vertexCount);
-                    if (create_texture_atlas)
-                        mRender.material = texture_mat;
-                    else
-                        mRender.material = visible;
-
-                    Mesh mesh_ = mFilter.mesh;
-
-                    var colors = new Color?[mesh_.vertices.Length];
-                    var uvs = new Vector2?[mesh_.vertices.Length];
-                    for (int idx = 0; idx < cam_poses_trans.Count; idx++)
-                    {
-                        cam.transform.position = cam_poses_trans[idx];
-                        cam.transform.rotation = cam_poses_rot[idx];
-
-                        for (var i = 0; i < mesh_.vertices.Length; i++)
-                        {
-                            var vertex = mesh_.vertices[i];
-
-                            if (create_texture_atlas)
-                            {
-                                Vector2? new_uv = GetScreenPositionFromWorld(vertex, cam_textures[idx], cam);
-                                if (new_uv != null && new_uv.HasValue)
-                                {
-                                    if (uvs[i] == null)
-                                    {
-                                        uvs[i] = new Vector2(atlas_rec[idx].x, atlas_rec[idx].y) + new_uv.Value * new Vector2(atlas_rec[idx].width, atlas_rec[idx].height);
-                                    }
-                                    else
-                                        Debug.Log("todo already set");
-                                }
-                            }
-                            else
-                            {
-                                Color? new_cal = GetColorAtWorldPosition(vertex, cam_textures[idx], cam);
-                                if (new_cal != null && new_cal.HasValue)
-                                {
-                                    if (colors[i] == null)
-                                    {
-                                        colors[i] = new_cal.Value;
-                                    }
-                                    else
-                                        Debug.Log("todo already set");
-                                }
-                            }
-                        }
-                    }
-
-                    if (create_texture_atlas)
-                    {
-                        int cntn = 0;
-                        Vector2[] mesh_uvs = new Vector2[uvs.Length];
-                        for (int idx = 0; idx < colors.Length; idx++)
-                        {
-                            if (uvs[idx].HasValue)
-                            {
-                                mesh_uvs[idx] = uvs[idx].Value;
-                                cntn++;
-                            }
-                            else
-                                mesh_uvs[idx] = new Vector2(0,0); //todo
-                        }
-                        Debug.Log("cnt uvs: " + cntn);
-                        mesh_.uv = mesh_uvs;
-                    }
-                    else
-                    {
-                        Color[] mesh_colors = new Color[colors.Length];
-                        for (int idx = 0; idx < colors.Length; idx++)
-                        {
-                            if (colors[idx].HasValue)
-                            {
-                                mesh_colors[idx] = colors[idx].Value;
-                            }
-                            else
-                                mesh_colors[idx] = Color.white;
-                        }
-                        mesh_.colors = mesh_colors;
-                    }                    
-                    curr_meshes.Add(newMesh);
-                }
-                Destroy(cam);
-                Destroy(camObj);
-                mesh_manager.DestroyAllMeshes();
-                cam_poses_rot.Clear();
-                cam_poses_trans.Clear();
-                cam_textures.Clear();
-                mesh_manager.enabled = false;
+                int[] triangle = new int[3];
+                triangle[0] = tris[idx]; triangle[1] = tris[idx + 1]; triangle[2] = tris[idx + 2];
+                triangle_list.Add(triangle);
             }
+            //Debug.Log("tri: " + mesh_.triangles[0] + "," + mesh_.triangles[1] + "," + mesh_.triangles[2]);
+            //Debug.Log("tri: " + mesh_.triangles[1] + "," + mesh_.triangles[2] + "," + mesh_.triangles[3]);
+            //break;
+
+            for (idx = 0; idx < cam_poses_trans.Count; idx++)
+            {
+                cam.transform.position = cam_poses_trans[idx];
+                cam.transform.rotation = cam_poses_rot[idx];
+
+                //yield return new WaitForEndOfFrame();
+                Debug.Log("tris left: " + triangle_list.Count);
+                List<int> remove_list = new List<int>();
+                for (int tir_index = 0; tir_index < triangle_list.Count; tir_index++)
+                {
+                    var triangle = triangle_list[tir_index];
+                    Vector3[] vertex = new Vector3[3];
+                    Vector2?[] new_uvs = new Vector2?[3];
+                    bool all_good = true;
+                    for (int j = 0; j < 3; j++)
+                    {
+                        vertex[j] = mesh_.vertices[triangle[j]];
+                        Vector2? new_uv = GetScreenPositionFromWorld(vertex[j], cam_textures[idx], cam);
+
+                        if (new_uv != null && new_uv.HasValue)
+                        {
+                            new_uvs[j] = new_uv;
+                        }
+                        else
+                        {
+                            all_good = false;
+                        }
+
+                    }
+
+                    if (all_good)
+                    {
+                        int cnt_used = 0;
+                        for (int j = 0; j < 3; j++)
+                        {
+                            if (uvs[triangle[j]] == null)
+                            {
+                                uvs[triangle[j]] = new Vector2(atlas_rec[idx].x, atlas_rec[idx].y) + new_uvs[j].Value * new Vector2(atlas_rec[idx].width, atlas_rec[idx].height);
+                            }
+                            else
+                            {
+                                cnt_used++;
+                            }
+
+                        }
+
+                        if (cnt_used == 3)
+                            Debug.Log("all already used");
+
+                        remove_list.Add(tir_index);
+                    }
+                }
+
+                foreach (int indice in remove_list.OrderByDescending(v => v))
+                {
+                    triangle_list.RemoveAt(indice);
+                }
+
+                //todo back down
+                //yield return new WaitForEndOfFrame();                 
+            }
+
+            int cntn = 0;
+            Vector2[] mesh_uvs = new Vector2[uvs.Length];
+            for (int idx_ = 0; idx_ < mesh_uvs.Length; idx_++)
+            {
+                if (uvs[idx_].HasValue)
+                {
+                    mesh_uvs[idx_] = uvs[idx_].Value;
+                    cntn++;
+                }
+                else
+                    mesh_uvs[idx_] = new Vector2(0, 0); //todo
+            }
+
+            Debug.Log("cnt uvs: " + cntn);
+            mesh_.uv = mesh_uvs;
+            curr_meshes.Add(newMesh);
+            Destroy(cam);
+            Destroy(camObj);
+            mesh_manager.DestroyAllMeshes();
+            cam_poses_rot.Clear();
+            cam_poses_trans.Clear();
+            cam_textures.Clear();
+            mesh_manager.enabled = false;        
+
         }
         else
         {
-            btn_text.text = "show mesh";
-            if (use_Projectors)
-            {
-                mesh_manager.meshPrefab.GetComponent<MeshRenderer>().material = invisible;
-                Debug.Log("mesh material changed");
-                foreach (var p in projectors)
-                    Destroy(p);
+            btn_text.text = "show mesh";            
 
-                projectors.Clear();
-            }
-            else
+            foreach(var obj in curr_meshes)
             {
 
-                foreach(var obj in curr_meshes)
-                {
+                MeshFilter mFilter = obj.GetComponent<MeshFilter>();
+                Destroy(obj);
 
-                    MeshFilter mFilter = obj.GetComponent<MeshFilter>();
-                    Destroy(obj);
-
-                }
-
-                mesh_manager.enabled = true;
             }
+
+            mesh_manager.enabled = true;
+            
         }
     }
 
