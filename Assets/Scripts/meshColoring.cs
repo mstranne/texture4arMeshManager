@@ -31,6 +31,7 @@ public class meshColoring : MonoBehaviour
     public bool subdivide_mesh = false;
     public bool create_texture_atlas = false;
     public bool image_auto = false;
+    public bool use_depth = true;
     public GameObject TakeImg = null;
 
     //list of meshes when not textured with runnning MeshManager instance
@@ -189,6 +190,7 @@ public class meshColoring : MonoBehaviour
                 for (int j = 0; j < 3; j++)
                 {
                     vertex[j] = mesh_.vertices[triangle[j]];
+
                     Vector2? new_uv = GetScreenPositionFromWorld(vertex[j], cam_textures[idx], cam);
 
                     if (new_uv != null && new_uv.HasValue)
@@ -381,7 +383,7 @@ public class meshColoring : MonoBehaviour
             (int)(hTextureToScreen * screenPosition.y));
     }
 
-    private static Vector2? GetScreenPositionFromWorld(Vector3 worldPosition, Texture2D texture, Camera camera)
+    private Vector2? GetScreenPositionFromWorld(Vector3 worldPosition, Texture2D texture, Camera camera)
     {
         var screenPosition = camera.WorldToScreenPoint(worldPosition);
 
@@ -390,24 +392,39 @@ public class meshColoring : MonoBehaviour
         if (screenPosition.y < 0 || screenPosition.y > Screen.height)
             return null;
 
-        Ray ray = camera.ScreenPointToRay(screenPosition);
-        RaycastHit hitData;
-        if (Physics.Raycast(ray, out hitData))
+        var wTextureToScreen = texture.width / (1f * Screen.width);
+        var hTextureToScreen = texture.height / (1f * Screen.height);
+
+        if (use_depth)
         {
-            if (Vector3.Distance(hitData.point, worldPosition) > 0.01f)
+            Color depth_val = texture.GetPixel((int)(wTextureToScreen * screenPosition.x), (int)(hTextureToScreen * screenPosition.y));
+            Vector3 pos = new Vector3(depth_val.r, depth_val.g, depth_val.b);
+            if(Mathf.Abs(Vector3.Distance(pos, worldPosition)) > 0.01)
             {
-                Debug.Log("not visible");
+                Debug.Log("too far away = " +  worldPosition + " - " + depth_val);
                 return null;
             }
         }
         else
         {
-            //Debug.Log("ray hit nothin");
-            //return null;
+            Ray ray = camera.ScreenPointToRay(screenPosition);
+            RaycastHit hitData;
+            if (Physics.Raycast(ray, out hitData))
+            {
+                if (Vector3.Distance(hitData.point, worldPosition) > 0.01f)
+                {
+                    //Debug.Log("not visible");
+                    return null;
+                }
+            }
+            else
+            {
+                //Debug.Log("ray hit nothin");
+                //return null;
+            }
         }
 
-        var wTextureToScreen = texture.width / (1f * Screen.width);
-        var hTextureToScreen = texture.height / (1f * Screen.height);
+        
 
         return new Vector2((wTextureToScreen * screenPosition.x)/texture.width, (hTextureToScreen * screenPosition.y)/texture.height);
     }
@@ -486,8 +503,10 @@ public class meshColoring : MonoBehaviour
             string path = Path.Combine(Application.persistentDataPath, midx++ + ".bin");
             File.WriteAllBytes(path, to_write);
 
-                
-            if(subdivide_mesh)
+            ObjExporter.MeshToFile(mFilter, Application.persistentDataPath, "generated_mesh");
+
+
+            if (subdivide_mesh)
                 MeshSmoothing.Subdivide(mFilter.mesh);
             //Debug.Log("vertex cnt2: " + mFilter.mesh.vertexCount);
             if (create_texture_atlas)
@@ -528,7 +547,8 @@ public class meshColoring : MonoBehaviour
                     for (int j = 0; j < 3; j++)
                     {
                         vertex[j] = mesh_.vertices[triangle[j]];
-                        Vector2? new_uv = GetScreenPositionFromWorld(vertex[j], cam_textures[idx], cam);
+
+                        Vector2? new_uv = GetScreenPositionFromWorld(vertex[j], depth_textures[idx], cam);
 
                         if (new_uv != null && new_uv.HasValue)
                         {

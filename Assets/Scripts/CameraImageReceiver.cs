@@ -17,7 +17,7 @@ public class CameraImageReceiver : MonoBehaviour
     private Texture2D _receivedTexture;
     private Texture2D _receivedDepthTexture;
     private Texture2D _rbgaTexture;
-    private Texture2D _greyTexture;
+    private Texture2D _depthPntsTexture;
 
     public void Start()
     {
@@ -175,36 +175,71 @@ public class CameraImageReceiver : MonoBehaviour
         _receivedDepthTexture.LoadRawTextureData(rawData);
         _receivedDepthTexture.Apply();
 
-        if (_greyTexture == null)
-            _greyTexture = new Texture2D(_receivedDepthTexture.width, _receivedDepthTexture.height, TextureFormat.BGRA32,
+        if (_depthPntsTexture == null)
+            _depthPntsTexture = new Texture2D(_receivedDepthTexture.width, _receivedDepthTexture.height, TextureFormat.RGBAFloat,
                 false);
 
-        ConvertFloatToGrayScale(_receivedDepthTexture, _greyTexture);
+        //ConvertFloatTo3DPoints(_receivedDepthTexture, _depthPntsTexture);
 
-        callback.Invoke(_rbgaTexture, _greyTexture);
+        //callback.Invoke(_rbgaTexture, _depthPntsTexture);
+        callback.Invoke(_rbgaTexture, _receivedDepthTexture);
         request.Dispose();
     }
 
-    void ConvertFloatToGrayScale(Texture2D txFloat, Texture2D txGray)
+    void ConvertFloatTo3DPoints(Texture2D txFloat, Texture2D txPnts)
     {
+        int width_depth = txFloat.width;
+        int height_depth = txFloat.height;
+        int width_camera = _rbgaTexture.width;
+
+        XRCameraIntrinsics intrinsic;
+        _cameraManager.TryGetIntrinsics(out intrinsic);
+        print("intrinsics:" + intrinsic);
+
+        float ratio = (float)width_depth / (float)width_camera;
+        float fx = intrinsic.focalLength.x * ratio;
+        float fy = intrinsic.focalLength.y * ratio;
+
+        float cx = intrinsic.principalPoint.x * ratio;
+        float cy = intrinsic.principalPoint.y * ratio;
 
         //Conversion of grayscale from near to far value
-        int length = txGray.width * txGray.height;
+        int length = txFloat.width * txFloat.height;
         Color[] depthPixels = txFloat.GetPixels();
-        Color[] colorPixels = txGray.GetPixels();
-        
-        for (int index = 0; index < length; index++)
+        Color[] posPixels = txFloat.GetPixels();
+
+        float depth = 0;
+        int index_dst = 0;
+        for (int depth_y = 0; depth_y < height_depth; depth_y++)
         {
+            index_dst = depth_y * width_depth;
+            for (int depth_x = 0; depth_x < width_depth; depth_x++)
+            {
+                //colors[index_dst] = m_CameraTexture.GetPixelBilinear((float)depth_x / (width_depth), (float)depth_y / (height_depth));
 
-            var value = (depthPixels[index].r - near) / (far - near);
+                depth = depthPixels[index_dst].r;
+                if (depth > near && depth < far)
+                {
+                    Vector3 pos = new Vector3(-depth * (depth_x - cx) / fx, -depth * (depth_y - cy) / fy, depth);
 
-            colorPixels[index].r = value;
-            colorPixels[index].g = value;
-            colorPixels[index].b = value;
-            colorPixels[index].a = 1;
+                    pos = _cameraManager.transform.rotation * pos + _cameraManager.transform.position;
+                    posPixels[index_dst].r = pos.x;
+                    posPixels[index_dst].g = pos.y;
+                    posPixels[index_dst].b = pos.z;
+                    
+                }
+                else
+                {
+                    posPixels[index_dst].r = -999;
+                    posPixels[index_dst].g = 0;
+                    posPixels[index_dst].b = 0;
+                }
+                //index_dst++;
+            }
         }
-        txGray.SetPixels(colorPixels);
-        txGray.Apply();
+
+        txPnts.SetPixels(posPixels);
+        txPnts.Apply();
     }
 
     public void enableOcclution(bool enable)
