@@ -1425,7 +1425,7 @@ MonoBehaviour:
   subdivide_mesh: 0
   create_texture_atlas: 1
   image_auto: 0
-<<<<<<< HEAD
+
   TakeImg: {fileID: 1086310492}
   rayHitter: {fileID: 829079500}
   btn_ray_txt: {fileID: 1223186891}
@@ -1508,10 +1508,7 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1223186889}
   m_CullTransparentMesh: 1
-=======
-  use_depth: 0
-  TakeImg: {fileID: 0}
->>>>>>> ea99d2e00e1268b5c7e22b85bd7627a0b6c95e21
+
 --- !u!1 &1342703409
 GameObject:
   m_ObjectHideFlags: 0
