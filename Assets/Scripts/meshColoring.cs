@@ -31,6 +31,7 @@ public class meshColoring : MonoBehaviour
     public bool subdivide_mesh = false;
     public bool create_texture_atlas = false;
     public bool image_auto = false;
+    public bool use_depth = true;
     public GameObject TakeImg = null;
 
     //list of meshes when not textured with runnning MeshManager instance
@@ -61,240 +62,11 @@ public class meshColoring : MonoBehaviour
 
         if (false)
         {
-            StartCoroutine(testScript());   
+           // StartCoroutine(testScript());   
         }
     }
 
-    IEnumerator testScript()
-    {
-        string folder = "G:/My Drive/work/Documents/";
-        IList<MeshFilter> meshes = mesh_manager.meshes;
-        GameObject camObj = new GameObject("camObj");
-        Camera cam = camObj.AddComponent<Camera>();
-        cam.CopyFrom(_camera);
 
-        string[] files = Directory.GetFiles(folder);
-
-        yield return new WaitForEndOfFrame();
-
-        string data = Path.Combine(folder, "out.txt");
-        data = File.ReadAllText(data);
-        data = data.Replace(',', '.');
-        string[] copped = data.Split('\n');
-        int idx;
-        string img_path = Path.Combine(folder, "imgs");
-        for (idx = 0; idx < copped.Length / 2; idx++)
-        {
-            string[] splt = copped[2 * idx].Split(';');
-            Vector3 vec = new Vector3(float.Parse(splt[0]), float.Parse(splt[1]), float.Parse(splt[2]));
-            //Debug.Log(vec[0] + "; " + vec[1]);
-            splt = copped[2 * idx + 1].Split(';');
-            //Debug.Log(splt[0] + ";" + splt[1] + ";" + splt[2] + ";" + splt[3]) ;
-            Quaternion q = new Quaternion(float.Parse(splt[0]), float.Parse(splt[1]), float.Parse(splt[2]), float.Parse(splt[3]));
-
-            cam_poses_rot.Add(q);
-            cam_poses_trans.Add(vec);
-
-            string img_to_load = Path.Combine(img_path, "Image"+idx+".png");
-            Texture2D tex = new Texture2D(2, 2);
-            tex.LoadImage(File.ReadAllBytes(img_to_load));
-            cam_textures.Add(tex);
-            img_to_load = Path.Combine(img_path, "Depth" + idx + ".png");
-            tex = new Texture2D(2, 2);
-            tex.LoadImage(File.ReadAllBytes(img_to_load));
-            depth_textures.Add(tex);
-
-            //if(idx == 0)
-            //{
-            //    break;
-            //}
-        }    
-
-        Rect[] atlas_rec = null;
-        if (create_texture_atlas)
-        {
-            Texture2D atlas = new Texture2D(8192, 8192);
-            atlas_rec = atlas.PackTextures(cam_textures.ToArray(), 0);
-            texture_mat.mainTexture = atlas;
-        }
-
-
-        List<CombineInstance> combine = new List<CombineInstance>();
-        idx = 0;
-        foreach (var f in files)
-        {
-
-            yield return new WaitForEndOfFrame();
-
-
-            Byte[] bytes = File.ReadAllBytes(f);
-            Mesh m = null;
-            try
-            {
-                m = MeshSerializer.ReadMesh(bytes);
-                CombineInstance c = new CombineInstance();
-                c.mesh = m;
-                c.transform = Matrix4x4.identity;
-                combine.Add(c);
-            }
-            catch (Exception e)
-            {
-                Debug.Log("file: " +f+"\nexception: \n" + e.Message );
-                continue;
-            }
-
-        }
-
-        GameObject newMesh = new GameObject("mesh");
-        MeshFilter mFilter = newMesh.AddComponent<MeshFilter>();
-        MeshRenderer mRender = newMesh.AddComponent<MeshRenderer>();
-        MeshCollider mCollider = newMesh.AddComponent<MeshCollider>();
-
-        mFilter.mesh = new Mesh();
-        mFilter.mesh.CombineMeshes(combine.ToArray());
-
-        float t = Time.realtimeSinceStartup;
-        Debug.Log(mFilter.mesh.vertices.Length);
-        if (subdivide_mesh)
-            MeshSmoothing.Subdivide(mFilter.mesh);
-        Debug.Log(mFilter.mesh.vertices.Length);
-        Debug.Log("subdiv time = " + (t - Time.realtimeSinceStartup));
-        //yield break;
-
-        //Debug.Log("vertex cnt2: " + mFilter.mesh.vertexCount);
-        if (create_texture_atlas)
-            mRender.material = texture_mat;
-        else
-            mRender.material = visible;
-
-        Mesh mesh_ = mFilter.mesh;
-        mCollider.sharedMesh = mesh_;
-
-        var colors = new Color?[mesh_.vertices.Length];
-        var uvs = new Vector2?[mesh_.vertices.Length];
-        var tris = mesh_.triangles;
-
-        List<int[]> triangle_list = new List<int[]>();
-        for (idx = 0; idx < tris.Length; idx += 3)
-        {
-            int[] triangle = new int[3];
-            triangle[0] = tris[idx]; triangle[1] = tris[idx+1]; triangle[2] = tris[idx+2];
-            triangle_list.Add(triangle);
-        }
-        //Debug.Log("tri: " + mesh_.triangles[0] + "," + mesh_.triangles[1] + "," + mesh_.triangles[2]);
-        //Debug.Log("tri: " + mesh_.triangles[1] + "," + mesh_.triangles[2] + "," + mesh_.triangles[3]);
-        //break;
-
-        for (idx = 0; idx < cam_poses_trans.Count; idx++)
-        {
-            cam.transform.position = cam_poses_trans[idx];
-            cam.transform.rotation = cam_poses_rot[idx];
-
-            yield return new WaitForEndOfFrame();
-            if (create_texture_atlas)
-            {
-                Debug.Log("tris left: " + triangle_list.Count);
-                List<int> remove_list = new List<int>();
-                for (int tir_index = 0; tir_index < triangle_list.Count; tir_index++)
-                {
-                    var triangle = triangle_list[tir_index];
-                    Vector3[] vertex = new Vector3[3];
-                    Vector2?[] new_uvs = new Vector2?[3];
-                    Color?[] new_cols = new Color?[3];
-                    bool all_good = true;
-                    for (int j = 0; j < 3; j++)
-                    {
-                        vertex[j] = mesh_.vertices[triangle[j]];
-                        Vector2? new_uv = GetScreenPositionFromWorld(vertex[j], cam_textures[idx], cam);
-                        if (new_uv != null && new_uv.HasValue)
-                        {
-                            new_uvs[j] = new_uv;
-                        }
-                        else
-                        {
-                            all_good = false;
-                        }
-
-                    }
-
-                    if (all_good)
-                    {
-                        int cnt_used = 0;
-                        for (int j = 0; j < 3; j++)
-                        {
-                            if (uvs[triangle[j]] == null)
-                            {
-                                uvs[triangle[j]] = new Vector2(atlas_rec[idx].x, atlas_rec[idx].y) + new_uvs[j].Value * new Vector2(atlas_rec[idx].width, atlas_rec[idx].height);
-                            }
-                            else
-                            {
-                                cnt_used++;
-                            }
-
-                        }
-
-                        if (cnt_used == 3)
-                            Debug.Log("all already used");
-
-                        remove_list.Add(tir_index);
-                    }
-                }
-
-                foreach (int indice in remove_list.OrderByDescending(v => v))
-                {
-                    triangle_list.RemoveAt(indice);
-                }
-
-                //todo back down
-                yield return new WaitForEndOfFrame();
-
-                int cntn = 0;
-                Vector2[] mesh_uvs = new Vector2[uvs.Length];
-                for (int idx_ = 0; idx_ < colors.Length; idx_++)
-                {
-                    if (uvs[idx_].HasValue)
-                    {
-                        mesh_uvs[idx_] = uvs[idx_].Value;
-                        cntn++;
-                    }
-                    else
-                        mesh_uvs[idx_] = new Vector2(0, 0); //todo
-                }
-                Debug.Log("cnt uvs: " + cntn);
-                mesh_.uv = mesh_uvs;
-            }
-            else
-            {
-
-            }
-           
-            //screenshot from pos
-            RenderTexture rt = new RenderTexture(1920, 1440, 24);
-            cam.targetTexture = rt;
-            Texture2D screenShot = new Texture2D(1920, 1440, TextureFormat.RGB24, false);
-            cam.Render();
-            RenderTexture.active = rt;
-            screenShot.ReadPixels(new Rect(0, 0, 1920, 1440), 0, 0);
-            cam.targetTexture = null;
-            RenderTexture.active = null; // JC: added to avoid errors
-            Destroy(rt);
-            Byte[] bytes = screenShot.EncodeToPNG();
-            string filename = "out/frame"+ idx+".png";
-            System.IO.File.WriteAllBytes(filename, bytes);
-
-        }
-        
-
-        curr_meshes.Add(newMesh);
-        
-        Destroy(cam);
-        Destroy(camObj);
-        mesh_manager.DestroyAllMeshes();
-        cam_poses_rot.Clear();
-        cam_poses_trans.Clear();
-        cam_textures.Clear();
-        mesh_manager.enabled = false;
-    }
 
     private void ARMeshChanged(ARMeshesChangedEventArgs obj)
     {
@@ -417,25 +189,9 @@ public class meshColoring : MonoBehaviour
             (int)(hTextureToScreen * screenPosition.y));
     }
 
-    private static Vector2? GetScreenPositionFromWorld(Vector3 worldPosition, Texture2D texture, Camera camera)
+    private Vector2? GetScreenPositionFromWorld(Vector3 worldPosition, Texture2D texture, Camera camera)
     {
         var screenPosition = camera.WorldToScreenPoint(worldPosition);
-
-        Ray ray = camera.ScreenPointToRay(screenPosition);
-        RaycastHit hitData;
-        if (Physics.Raycast(ray, out hitData))
-        {
-            if (Vector3.Distance(hitData.point, worldPosition) > 0.01f)
-            {
-                //Debug.Log("not visible");
-                return null;
-            }
-        }
-        else
-        {
-            //Debug.Log("ray hit nothin");
-            return null;
-        }
 
         if (screenPosition.x < 0 || screenPosition.x > Screen.width)
             return null;
@@ -444,6 +200,37 @@ public class meshColoring : MonoBehaviour
 
         var wTextureToScreen = texture.width / (1f * Screen.width);
         var hTextureToScreen = texture.height / (1f * Screen.height);
+
+        if (use_depth)
+        {
+            Color depth_val = texture.GetPixel((int)(wTextureToScreen * screenPosition.x), (int)(hTextureToScreen * screenPosition.y));
+            Vector3 pos = new Vector3(depth_val.r, depth_val.g, depth_val.b);
+            if(Mathf.Abs(Vector3.Distance(pos, worldPosition)) > 0.01)
+            {
+                Debug.Log("too far away = " +  worldPosition + " - " + depth_val);
+                return null;
+            }
+        }
+        else
+        {
+            Ray ray = camera.ScreenPointToRay(screenPosition);
+            RaycastHit hitData;
+            if (Physics.Raycast(ray, out hitData))
+            {
+                if (Vector3.Distance(hitData.point, worldPosition) > 0.01f)
+                {
+                    //Debug.Log("not visible");
+                    return null;
+                }
+            }
+            else
+            {
+                //Debug.Log("ray hit nothin");
+                //return null;
+            }
+        }
+
+        
 
         return new Vector2((wTextureToScreen * screenPosition.x)/texture.width, (hTextureToScreen * screenPosition.y)/texture.height);
     }
@@ -480,7 +267,7 @@ public class meshColoring : MonoBehaviour
                 bytes = depth_textures[idx].EncodeToPNG();                
                 File.WriteAllBytes(dirPath + "Depth" + idx + ".png", bytes);
 
-                content += String.Format("{0:F5};{1:F5};{2:F5} \n{3:F5};{4:F5};{5:F5}{6:F5} \n", cam_poses_trans[idx].x, cam_poses_trans[idx].y,
+                content += String.Format("{0:F5};{1:F5};{2:F5} \n{3:F5};{4:F5};{5:F5};{6:F5} \n", cam_poses_trans[idx].x, cam_poses_trans[idx].y,
                         cam_poses_trans[idx].z, cam_poses_rot[idx].x, cam_poses_rot[idx].y, cam_poses_rot[idx].z, cam_poses_rot[idx].w);
             }
             File.WriteAllText(posefile, content);
@@ -522,8 +309,10 @@ public class meshColoring : MonoBehaviour
             string path = Path.Combine(Application.persistentDataPath, midx++ + ".bin");
             File.WriteAllBytes(path, to_write);
 
-                
-            if(subdivide_mesh)
+            //ObjExporter.MeshToFile(mFilter, Application.persistentDataPath, "generated_mesh");
+
+
+            if (subdivide_mesh)
                 MeshSmoothing.Subdivide(mFilter.mesh);
             //Debug.Log("vertex cnt2: " + mFilter.mesh.vertexCount);
             if (create_texture_atlas)
@@ -564,7 +353,8 @@ public class meshColoring : MonoBehaviour
                     for (int j = 0; j < 3; j++)
                     {
                         vertex[j] = mesh_.vertices[triangle[j]];
-                        Vector2? new_uv = GetScreenPositionFromWorld(vertex[j], cam_textures[idx], cam);
+
+                        Vector2? new_uv = GetScreenPositionFromWorld(vertex[j], depth_textures[idx], cam);
 
                         if (new_uv != null && new_uv.HasValue)
                         {
@@ -582,7 +372,7 @@ public class meshColoring : MonoBehaviour
                         int cnt_used = 0;
                         for (int j = 0; j < 3; j++)
                         {
-                            if (uvs[triangle[j]] == null)
+                            if (!uvs[triangle[j]].HasValue)
                             {
                                 uvs[triangle[j]] = new Vector2(atlas_rec[idx].x, atlas_rec[idx].y) + new_uvs[j].Value * new Vector2(atlas_rec[idx].width, atlas_rec[idx].height);
                             }
